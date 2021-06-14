@@ -3,6 +3,7 @@ module github.com/markadev/hello-apm
 go 1.16
 
 require (
+	github.com/DataDog/datadog-go v4.7.0+incompatible // indirect
 	github.com/Microsoft/go-winio v0.5.0 // indirect
 	github.com/google/uuid v1.2.0 // indirect
 	github.com/philhofer/fwd v1.1.1 // indirect
