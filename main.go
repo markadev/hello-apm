@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"io/ioutil"
+	"log"
+	"net/http"
 	"os"
 	"time"
 
@@ -14,15 +17,17 @@ import (
 var StatsdClient statsd.ClientInterface
 
 type optionValues struct {
-	tracerService string
-	statsdAddr    string
+	serviceName string
+	statsdAddr  string
+	ecsHost     bool
 }
 
 func main() {
 	opts := getOptions()
+	initECSHost(opts)
 	StatsdClient = initStatsdClient(opts)
 
-	tracer.Start(tracer.WithService(opts.tracerService))
+	tracer.Start(tracer.WithService(opts.serviceName))
 	defer tracer.Stop()
 
 	ctx := context.Background()
@@ -34,15 +39,33 @@ func main() {
 }
 
 func getOptions() (opts optionValues) {
-	pflag.StringVar(&opts.tracerService, "tracer-service", "hello-apm", "service name to set in the tracer")
+	pflag.StringVar(&opts.serviceName, "service", "hello-apm", "service name to set in the tracer")
 	pflag.StringVar(&opts.statsdAddr, "statsd-addr", "localhost:8125", "<host>:<port> of the statsd server")
+	pflag.BoolVar(&opts.ecsHost, "ecs-host", false, "set DD_AGENT_HOST from the ECS instance metadata")
 	pflag.Parse()
 	return
 }
 
+func initECSHost(opts optionValues) {
+	if opts.ecsHost {
+		resp, err := http.Get("http://169.254.169.254/latest/meta-data/local-ipv4")
+		if err != nil {
+			log.Panicf("failed to get ECS hostname: %v", err)
+		}
+
+		bodyBytes, err := ioutil.ReadAll(resp.Body)
+		host := string(bodyBytes)
+		if err != nil {
+			log.Panicf("failed to get ECS hostname: %v", err)
+		}
+
+		os.Setenv("DD_AGENT_HOST", host)
+	}
+}
+
 func initStatsdClient(opts optionValues) statsd.ClientInterface {
 	tags := []string{
-		"service:" + opts.tracerService,
+		"service:" + opts.serviceName,
 	}
 	if env, ok := os.LookupEnv("DD_ENV"); ok {
 		tags = append(tags, "env:"+env)
@@ -70,7 +93,7 @@ func fakeWebRequest(ctx context.Context) {
 }
 
 func fakeCacheRequest(ctx context.Context, key string) {
-	span, ctx := tracer.StartSpanFromContext(ctx,
+	span, _ := tracer.StartSpanFromContext(ctx,
 		"cache.request",
 		tracer.ResourceName(key),
 		tracer.SpanType(ext.SpanTypeRedis))
@@ -80,7 +103,7 @@ func fakeCacheRequest(ctx context.Context, key string) {
 }
 
 func fakeTemplateRender(ctx context.Context, name string) {
-	span, ctx := tracer.StartSpanFromContext(ctx,
+	span, _ := tracer.StartSpanFromContext(ctx,
 		"template.render",
 		tracer.ResourceName(name))
 	defer span.Finish()
