@@ -6,6 +6,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/DataDog/datadog-go/statsd"
@@ -32,16 +34,26 @@ func main() {
 	defer tracer.Stop()
 
 	ctx := context.Background()
-
 	if opts.jobMode {
 		fakeWebRequest(ctx)
 		return
 	}
 
+	ctx, cancelFunc := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer cancelFunc()
+
 	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	log.Print("starting...")
 	for {
-		<-ticker.C
-		go fakeWebRequest(ctx)
+		select {
+		case <-ticker.C:
+			go fakeWebRequest(ctx)
+		case <-ctx.Done():
+			log.Print("exiting...")
+			return
+		}
 	}
 }
 
