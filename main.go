@@ -20,6 +20,7 @@ type optionValues struct {
 	serviceName string
 	statsdAddr  string
 	ecsHost     bool
+	jobMode     bool
 }
 
 func main() {
@@ -31,6 +32,12 @@ func main() {
 	defer tracer.Stop()
 
 	ctx := context.Background()
+
+	if opts.jobMode {
+		fakeWebRequest(ctx)
+		return
+	}
+
 	ticker := time.NewTicker(time.Second)
 	for {
 		<-ticker.C
@@ -42,6 +49,7 @@ func getOptions() (opts optionValues) {
 	pflag.StringVar(&opts.serviceName, "service", "hello-apm", "service name to set in the tracer")
 	pflag.StringVar(&opts.statsdAddr, "statsd-addr", "localhost:8125", "<host>:<port> of the statsd server")
 	pflag.BoolVar(&opts.ecsHost, "ecs-host", false, "set DD_AGENT_HOST from the ECS instance metadata")
+	pflag.BoolVar(&opts.jobMode, "job", false, "run as a one-shot job instead of looping forever")
 	pflag.Parse()
 	return
 }
