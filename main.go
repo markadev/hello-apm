@@ -19,10 +19,12 @@ import (
 var StatsdClient statsd.ClientInterface
 
 type optionValues struct {
-	serviceName string
-	statsdAddr  string
-	ecsHost     bool
-	jobMode     bool
+	serviceName   string
+	statsdAddr    string
+	ecsHost       bool
+	jobMode       bool
+	jobStartDelay time.Duration
+	jobExitDelay  time.Duration
 }
 
 func main() {
@@ -33,14 +35,25 @@ func main() {
 	tracer.Start(tracer.WithService(opts.serviceName))
 	defer tracer.Stop()
 
-	ctx := context.Background()
+	ctx, cancelFunc := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancelFunc()
+
 	if opts.jobMode {
+		select {
+		case <-time.After(opts.jobStartDelay):
+		case <-ctx.Done():
+			return
+		}
+
 		fakeWebRequest(ctx)
+
+		select {
+		case <-time.After(opts.jobExitDelay):
+		case <-ctx.Done():
+			return
+		}
 		return
 	}
-
-	ctx, cancelFunc := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer cancelFunc()
 
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -62,6 +75,8 @@ func getOptions() (opts optionValues) {
 	pflag.StringVar(&opts.statsdAddr, "statsd-addr", "localhost:8125", "<host>:<port> of the statsd server")
 	pflag.BoolVar(&opts.ecsHost, "ecs-host", false, "set DD_AGENT_HOST from the ECS instance metadata")
 	pflag.BoolVar(&opts.jobMode, "job", false, "run as a one-shot job instead of looping forever")
+	pflag.DurationVar(&opts.jobStartDelay, "job-start-delay", 0, "amount of time to wait before emitting a 'job' trace")
+	pflag.DurationVar(&opts.jobExitDelay, "job-exit-delay", 0, "amount of time to wait after emitting a 'job' trace")
 	pflag.Parse()
 	return
 }
